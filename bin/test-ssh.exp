@@ -1,0 +1,92 @@
+#!/usr/bin/expect -f
+
+# Copyright (c) 2004 Philippe McLean <pmclean@users.sourceforge.net>
+# All rights reserved.  This program is free software; you can
+# redistribute it and/or modify it under the same terms as Perl
+# itself.
+
+# Permission has kindly been given to me by Zero-Knowledge Systems
+# Inc., to make this software available under the artistic license.
+
+# $Id: test-ssh.exp,v 1.1.1.1 2004/03/03 17:12:45 pmclean Exp $
+
+set timeout 30
+
+proc usage {} {
+    puts "usage: test-ssh.exp <SSH COMMAND> <USER> <HOST> \[PROXY\]"
+    exit
+}
+
+if { $argc < 3 || $argc > 4 } { 
+    usage
+}
+
+set ssh_command [lindex $argv 0]
+set user [lindex $argv 1]
+set host [lindex $argv 2]
+
+if { $argc == 4 } {
+    # using a proxy
+    set proxy [lindex $argv 3]
+    set command "$ssh_command -x -l $user $proxy \"ssh -x -l $user $host \'echo rippin OK\'\" 2>&1"
+} else {
+    set command "$ssh_command -x -l $user $host \"echo rippin OK\" 2>&1"
+}
+
+set ok 0
+
+spawn /bin/sh -c $command
+
+while 1 {
+    expect {
+	timeout { 
+	    puts "timed out executing ssh"
+	    break
+	}
+	"FATAL" {
+	    puts "fatal error"
+	    break
+	}
+	"Destination Unreachable" {
+	    puts "destination unreachable: did you specify an ssh-proxy for this host?"
+	    break
+	}
+	"You have no controlling tty and no DISPLAY." {
+	    puts "cannot read passphrase--is your key installed correctly?"
+	    break
+	}
+	"no more authentication methods" {
+	    puts "no more authentication methods: is your key installed correctly?"
+	    break
+	}
+	"Authentication failed" {
+	    puts "authentication failed: is your key installed correctly?"
+	    break
+	}
+	"rippin OK" {
+	    puts "everything ok"
+	    set ok 1
+	    break
+	}
+	"re you sure you want to continue connecting" {
+	    send "yes\r"
+	}
+	"password:" {
+	    puts "expected password: is your key installed correctly?"
+	    break
+	}
+	"passphrase:" {
+	    puts "expected passphrase: do you have ssh-agent running?"
+	    break
+	}
+    }
+}
+
+if { $ok } {
+    exit 0
+} else {
+    exit -1
+}
+
+
+

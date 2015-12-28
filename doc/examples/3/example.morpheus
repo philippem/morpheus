@@ -1,0 +1,23 @@
+# $Id: example.morpheus,v 1.1.1.1 2004/03/03 17:12:46 pmclean Exp $
+
+[info]
+description = A morpheus script that executes on the master machine once, then once on each aip. The master saves its own hostname in the shared context, which each aip displays.
+
+[host-entity 0.0]
+description = Stage to run on the master
+module = master.pm
+; run on the master
+location = master
+; run exactly once
+executions = 1
+
+[aip 1.0]
+description = Display the master's hostname
+module = entity.pm
+
+[host-entity 2.0]
+description = Dump the list of hosts in the shared context
+module = master.pm
+location = master
+executions = 1
+

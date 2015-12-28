@@ -1,0 +1,21 @@
+# $Id: example.morpheus,v 1.1.1.1 2004/03/03 17:12:46 pmclean Exp $
+
+# A minimal morpheus configuration script
+
+# comments begin with # or ;
+
+# Optional info section. Morpheus will emit the description field, if
+# it exists.
+
+[info]
+description = Example of a trivial morpheus script
+
+; Run this stage (0.0) on every machine that has the host-entity attribute.
+[host-entity stage0.0]
+; description of the module
+description = Trivial example of a morpheus module
+description-file = description.txt
+; name of the module (a perl script)
+module = trivial.pm
+
+

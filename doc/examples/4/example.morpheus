@@ -1,0 +1,22 @@
+# $Id: example.morpheus,v 1.1.1.1 2004/03/03 17:12:46 pmclean Exp $
+
+[info]
+description = A morpheus script that demonstrates file sharing.
+
+[host-entity 0.0]
+description = The master creates a file to be pushed
+module = master-initial.pm
+location = master
+executions = 1
+
+; run on each aip
+[aip 1.0]
+description = Create a file and save it in the crypt
+module = crypt.pm
+
+[host-entity 2.0]
+description = Display files in the crypt
+module = master-final.pm
+location = master
+executions = 1
+

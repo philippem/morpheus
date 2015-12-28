@@ -1,0 +1,24 @@
+# $Id: example.morpheus,v 1.1.1.1 2004/03/03 17:12:46 pmclean Exp $
+
+# Examples of using defaults, and exclude-entities parameters.
+
+[info]
+description = Example of a trivial morpheus script
+
+[defaults stage]
+; attributes set here will be defaults in any stage description
+; redefinitions in a stage will override the defaults
+;
+; default entities to exclude (ignore mail 2.0 entities)
+; this is a colon delimited list
+exclude-entities = notfree:fmg
+
+[host-entity stage0.0]
+description = run on all entities
+module = trivial.pm
+
+[aip stage1.0]
+description = module to run on all aips, except coreaips
+exclude-entities = coreaip
+module = trivial.pm
+

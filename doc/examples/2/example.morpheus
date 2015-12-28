@@ -1,0 +1,20 @@
+# $Id: example.morpheus,v 1.1.1.1 2004/03/03 17:12:46 pmclean Exp $
+
+[info]
+description = A morpheus script that executes a first stage on the nym server(s), then a second stage on the token server(s), then a third stage that executes exactly once for any aips.
+
+[nymsrv 0.0]
+description = Stage to run on the nym server(s)
+module = entity.pm
+
+[toksrv 1.0]
+description = Stage to run on the token server(s)
+module = entity.pm
+
+[aip 1.5]
+description = Stage to run once, for any aips.
+; Note that the particular aip for which this module runs is indeterminate.
+module = entity.pm
+; Specify the number of times you wish this stage to be executed.
+; This is a global count for this morpheus run.
+executions = 1

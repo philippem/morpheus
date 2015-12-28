@@ -1,0 +1,76 @@
+$Id: README,v 1.1.1.1 2004/03/03 17:12:46 pmclean Exp $
+
+Sample morpheus scripts.
+
+Philippe McLean
+9 January 2001
+
+To run these samples:
+
+1. Add the location of the morpheus executable (on the mayday_dev branch,
+tools/morpheus/bin) to your PATH.
+
+2. Choose a network. 
+
+3. Prepare your keys on the machines on that network (use morpheus's
+test-ssh option to verify).
+
+4. Create a genesis network config in this directory describing the
+network (you may symlink to or copy the current genesis.conf or
+genesis-remote.conf).
+
+5. Choose an example. To run it, do
+
+  # ./run-example.pl <example> <network> <network config>
+
+
+Descriptions of the samples
+
+1
+
+- minimal morpheus example. Executes a module once on each machine on
+  a network. Illustrates use of description-file attribute for stages.
+
+2
+
+- example of using different entities. Executes a module on each nym
+  server, then another module on each token server, then one module
+  exactly once for any aips.
+
+3
+
+- example of running a module once on the master, and sharing data
+  between hosts, using the context object. A string is set by the
+  master script. A second module executes on each aip and displays the
+  string set by the master.
+
+4
+
+- example of sharing data between hosts, using files. The master
+  creates a file which is pushed to each slave. Each slave displays
+  the pushed file, then creates a file and saves it in the crypt,
+  which is pulled back to the master. Finally, the master lists all
+  files in the crypt.
+
+5
+
+- example of using the Logger to emit warnings, errors, and fatal
+  messages
+
+6
+
+- example of using exclude-entities and defaults in morpheus
+  configurations.
+
+7
+
+- example of running non perl code
+
+8 
+
+- example of examining the stage_execution list to recover stage exit codes
+
+For more in depth examples, see the migration scripts used to deploy
+Freedom 2.0, on the scarecrow_dev branch, in migration/scarecrow.
+
+

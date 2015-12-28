@@ -1,0 +1,763 @@
+#!/usr/bin/perl -w
+
+# $Id: morpheus,v 1.1.1.1 2004/03/03 17:12:45 pmclean Exp $
+
+# Copyright (c) 2004 Philippe McLean <pmclean@users.sourceforge.net>
+# All rights reserved.  This program is free software; you can
+# redistribute it and/or modify it under the same terms as Perl
+# itself.
+
+# Permission has kindly been given to me by Zero-Knowledge Systems
+# Inc., to make this software available under the artistic license.
+
+# Tool for executing an ordered series of actions on a network.
+
+use strict;
+
+use Getopt::Long;
+use Cwd;
+
+use FileHandle;
+STDERR->autoflush(1);
+STDOUT->autoflush(1);
+
+my $version = '$Revision: 1.1.1.1 $'; #' Help emacs
+$version =~ s/\$//g;
+$version =~ s/Revision: //;
+
+my $config = undef;
+my $genesis_config = undef;
+
+my $single_stage_name = undef;
+my $single_stage_number = undef;
+my $first_stage_name = undef;
+my $last_stage_name = undef;
+my $first_stage_number = undef;
+my $last_stage_number = undef;
+my $master = 0;
+my $network_host = undef;
+my $clean_shadow = 0;
+my $network_name = undef;
+my $hosts = [];
+my @hostnames = ();
+my @module_search_dirs = ( );
+my $test_ssh = 0;
+my $no_remote_execute = 0;
+my $extra_module_options = [];
+my @original_options = @ARGV;
+my $prompt_after_each_stage = 0;
+my $prompt_before_each_stage = 0;
+my $prompt_before_each_host = 0;
+my $slave_entity = undef;
+my $ssh_user = 'root';
+my $ssh_command = 'ssh';
+my $log_file = 'Morpheus';
+my $cwd = undef;
+my $trim_log = 0;
+
+my $user_dir = cwd();
+
+my $morpheus_root = $0;
+if (-l $morpheus_root) {
+  # follow the link
+  $morpheus_root = readlink($morpheus_root);
+}
+
+if ($morpheus_root !~ /^\s*\//) {
+  # not an absolute path
+  $morpheus_root = cwd() . '/' . $morpheus_root;
+}
+
+
+
+my $morpheus_executable = undef;
+if ($morpheus_root =~ /\/bin\/+([^\/]+)/) {
+  $morpheus_root = $`;
+  $morpheus_executable = $1;
+}
+
+unshift(@INC, "$morpheus_root/lib");
+my $morpheus_bin = "$morpheus_root/bin";
+
+require Morpheus;
+require Data::Dumper;
+require Error_Code;
+
+my $tmp_dir = undef;		#'/tmp/Morpheus';
+
+sub usage {
+  title();
+  print 
+    "usage: $0 
+       --help                      : this help
+
+       --stage {stage number}      : only execute {stage number} 
+       --first-stage {stage number}: start at {stage number}
+       --last-stage {stage number} : end with {stage number}
+
+       --config {filename}         : specify the Morpheus script
+       --genesis-config {filename} : specify the Genesis network config
+
+       --network {network}         : specify the network to work with
+       --master                    : execute as the master
+
+       --module-search-dir         : specify an additional module search directory (may be repeated)
+       --extra-module-options [OPTIONS ...] : append OPTIONS to \@ARGV when evaling a module
+
+       --cwd {dir}                 : do a chdir({dir}) before anything else
+
+       Master options
+
+       --trim-log                  : truncate log before starting
+       --test-ssh                  : test ssh each machine on the network
+       --host {host}               : only execute on {host} in {network}, may be repeated
+       --no-remote-execute         : show the steps which would be performed
+       --tmp-dir                   : location of Morpheus tmp files (defaults to /tmp/Morpheus-<user>-<master-host>)
+       --prompt-after-each-stage   : prompt after executing each stage
+       --prompt-before-each-stage  : prompt before executing each stage
+       --prompt-before-each-host   : prompt before executing on each host
+       --ssh-user <user>           : remote ssh user (default root)
+       --ssh-command               : ssh command (default `$ssh_command')
+
+       Slave options
+
+       --host {host}               : execute as {host} in the genesis {network} config (may not be repeated)
+       --slave-entity {entity}     : entity of this slave
+";
+}     
+
+my $options = { 
+	       "config" => \$config,
+	       "genesis-config" => \$genesis_config,
+	       "stage" => \$single_stage_name,
+	       "first-stage" => \$first_stage_name,
+	       "last-stage" => \$last_stage_name,
+	       "master" => \$master,
+	       "network" => \$network_name,
+	       "host" => \@hostnames,
+	       "test-ssh" => \$test_ssh,
+	       "clean-shadow" => \$clean_shadow,
+	       "no-remote-execute" => \$no_remote_execute,
+	       "tmp-dir" => \$tmp_dir,
+	       "prompt-after-each-stage" => \$prompt_after_each_stage,
+	       "prompt-before-each-stage" => \$prompt_before_each_stage,
+	       "prompt-before-each-host" => \$prompt_before_each_host,
+	       "slave-entity" => \$slave_entity,
+	       "module-search-dir" => \@module_search_dirs,
+	       "ssh-user" => \$ssh_user,
+	       "ssh-command" => \$ssh_command,
+	       "cwd" => \$cwd,
+	       "trim-log" => \$trim_log,
+	      };
+
+# look for --extra-module-options, and remove them
+
+
+my $i;
+for ($i = 0; $i < $#ARGV; ++$i) {
+  if ($ARGV[$i] eq '--extra-module-options') {
+    # remove the rest
+    @{$extra_module_options} = splice(@ARGV, $i + 1);
+    # remove '--extra-module-options'
+    pop(@ARGV); 
+  }
+}
+
+# marshall options
+
+if (!GetOptions( $options,
+                 "help",
+                 "config=s",
+                 "genesis-config=s",
+                 "stage=s",
+                 "first-stage=s",
+                 "last-stage=s",
+                 "master",
+                 "network=s",
+                 "host=s",
+                 "test-ssh",
+                 "clean-shadow",
+                 "no-remote-execute",
+                 "tmp-dir=s",
+                 "prompt-after-each-stage",
+                 "prompt-before-each-stage",
+                 "prompt-before-each-host",
+                 "slave-entity=s",
+		 "module-search-dir=s",
+		 "ssh-user=s",
+		 "ssh-command=s",
+		 "cwd=s",
+		 "trim-log",
+	       )) {
+  usage();
+  exit(-1);
+}
+
+if (!defined($config)) {
+  print "Please specify a morpheus config (--config option)\n";    
+  usage();
+  exit(-1);
+}
+
+if (!defined($genesis_config)) {
+  print "Please specify a genesis config (--genesis-config option)\n";
+  usage();
+  exit(-1);
+}
+
+if (defined($cwd)) {
+  chdir($cwd) || die("Couldn't chdir($cwd): $!\n");
+}
+
+if (!defined($tmp_dir)) {
+  my($name, $passwd,  $uid) = getpwuid(POSIX::getuid());
+  my $hostname = `/bin/hostname --fqdn`;
+  chomp($hostname);
+  $tmp_dir = "/tmp/Morpheus-$name\@$hostname";
+}
+
+#print Dumper($options);
+
+sub title {
+print <<"EOM";
+Morpheus - Network Morphing Tool
+Philippe McLean <pmclean\@users.sourceforge.net>
+EOM
+                
+print <<'EOM';
+$Id: morpheus,v 1.1.1.1 2004/03/03 17:12:45 pmclean Exp $ 
+EOM
+}
+
+if (defined($options->{'help'})) {
+  usage();
+  exit(0);
+}
+
+if ($master) {
+  title();
+}
+
+
+#if ($master) {
+#  $log_file = $log_file . '.master';
+#}
+
+system("mkdir -p $tmp_dir/local/logs");
+
+Logger::set_log_file("$tmp_dir/local/logs/$log_file");
+
+if ($trim_log) {
+  Logger::trim_log();
+  $trim_log = 0;
+}
+
+    
+my $genesis = new Genesis(Config_File => $genesis_config);
+
+# compute default module search paths
+if ($master) {
+  if ($config =~ /\/[^\/]+$/) {
+    # add the directory containing the config file 
+    push(@module_search_dirs, $`);
+  }
+  push(@module_search_dirs, '.');
+}
+
+my $morpheus = new Morpheus(
+                            Master => $master,
+                            Config_File => $config, 
+                            Genesis => $genesis, 
+                            Extra_Module_Options => $extra_module_options,
+                            Tmp_Dir => $tmp_dir,
+                            User_Dir => $user_dir,
+                            Morpheus_Root => $morpheus_root,
+                            Morpheus_Executable => $morpheus_executable,
+			    Module_Search_Dirs => \@module_search_dirs,
+			    ssh_user => $ssh_user,
+			    ssh_command => $ssh_command,
+			   );
+
+$morpheus->emit_initial_log_message();
+
+Logger::informational(""
+                      . $0 
+                      . " "
+                      . join(' ', @original_options)
+                      . "");
+
+#Logger::informational("good times start now");
+
+if ($master && defined($morpheus->get_description())) {
+  Logger::informational("Morpheus : `"
+                        . $morpheus->get_description()
+                        . "'"
+		       );
+}
+
+
+# get all the stages, sorted
+
+my $stages = $morpheus->get_all_stages_sorted();
+
+if (!@{$stages}) {
+  Logger::informational("morpheus script `$config' contains no stages... nothing to do");
+  exit(0);
+}
+
+# Deal with options    
+
+# count the number of times a stage was executed
+my $execution_counts = {};
+
+# determine the range of stages to execute
+if (defined($single_stage_name)) {
+  if (defined($first_stage_name) || defined($last_stage_name)) {
+    Logger::fatal("cannot specify first stage or last stage with `--stage' option");
+  }
+  $first_stage_name = $single_stage_name;
+  $last_stage_name = $single_stage_name;
+}       
+
+if (defined($first_stage_name)) {
+  $first_stage_number = new Morpheus::Stage_Number($first_stage_name);
+} else {
+  $first_stage_number = new Morpheus::Stage_Number($morpheus->get_first_stage()->get_stage_number()->print());
+}
+
+if (defined($last_stage_name)) {
+  $last_stage_number = new Morpheus::Stage_Number($last_stage_name);
+} else {
+  $last_stage_number = new Morpheus::Stage_Number($morpheus->get_last_stage()->get_stage_number()->print());
+}
+
+my $network = undef;
+
+if (!defined($network_name)) {
+  Logger::fatal("please specify a network with the `--network' option");
+  usage();
+} else {
+  $network = $genesis->get_network_by_name($network_name);
+  if (!defined($network)) {
+    Logger::fatal("no such network `$network_name' in genesis config `$genesis_config'");
+  }
+}
+
+if (@hostnames) {
+  # user has specified hosts. Find them all.
+  if (!$master && (@hostnames != 1)) {
+    Logger::fatal("exactly one host must be specified with the --host option in slave mode");
+  }    
+  foreach my $hostname (@hostnames) {
+    my $host = $network->get_host($hostname);
+    if (!defined($host)) {
+      Logger::fatal("no such host `$hostname' in network `$network_name' in genesis config `$genesis_config'");                      
+    }
+    push(@{$hosts}, $host);
+  }
+} else {
+  $hosts = $network->get_hosts();
+}
+
+if ($master) {
+  if (defined($slave_entity)) {
+    Logger::fatal("--slave-entity option cannot be specified in master mode");
+  }
+} else {
+  if (!defined($slave_entity)) {
+    Logger::fatal("--slave-entity option must be specified for slave");
+  }
+} 
+
+# do we want to test_ssh?
+
+if ($test_ssh) {
+  my $all_ok = 1;
+  Logger::informational("testing ssh on hosts on network `$network_name'"); 
+  foreach my $host (@{$hosts}) {
+    my $message = '';
+    Logger::informational("trying `" . $host->get_name()
+			  . "' ("
+			  . $host->get_hostname()
+			  . ")"
+			  . (defined($host->get_ssh_proxy()) 
+			     ? (" (ssh-proxy=" . $host->get_ssh_proxy()) . ")" : '')
+			  . "..."
+			 );
+
+    if (!SSH::test(Host => $host, 
+		   Message => \$message,
+		   ssh_user => $ssh_user,
+		   ssh_command => $ssh_command,
+		   Morpheus_Bin => $morpheus_bin,
+		  )) {
+      Logger::warning("could not ssh to host `" . $host->get_name() 
+		      . "' ("
+		      . $host->get_hostname()
+		     );
+      $all_ok = 0;
+    } else {
+      Logger::informational("ok");
+    }
+  }
+  if ($all_ok) {
+    Logger::informational("could connect to all hosts");
+    exit(0);
+  } else {
+    Logger::error("could NOT connect to all hosts");
+    exit(-1);
+  }
+}
+
+# deal with options in either master or local mode
+
+my $stage_exit_code = 0;
+
+if ($master) {
+  Logger::informational("executing on " . Misc::hostname() . " as master on " . `/bin/date`);
+}
+
+#if (defined($this_host)) {
+#  Logger::informational(" `" 
+#                       . $this_host->get_name()
+#                       . "'"
+#                       . " --> "
+#                       . join(', ', sort(keys(%{$this_host->get_parameters()})))
+#                       );
+#  Logger::informational(" ");
+#}
+
+Logger::informational(" ");
+
+# execute all the stages
+
+STAGE:
+foreach my $stage (@{$stages}) {
+
+  # Do we want to execute this stage?
+  if (Morpheus::Stage_Number::before_or_same($first_stage_number, $stage->get_stage_number()) 
+      && Morpheus::Stage_Number::before_or_same($stage->get_stage_number(), $last_stage_number)) {
+
+    if ($master) {
+      Logger::informational(' ');
+      Logger::informational("stage " 
+			    . $stage->get_stage_number()->print()
+			    . " `"
+			    . (defined($stage->get_description()) ? $stage->get_description() : '')
+			    . "'\n module=`"
+			    . $stage->get_module()
+			    . "'"
+			   );
+      Logger::informational_to_log_file("stage " 
+					. $stage->get_stage_number()->print()
+					. " `"
+					. (defined($stage->get_description()) ? $stage->get_description() : '')
+					. "'\n module=`"
+					. $stage->get_module()
+					. "' location=`"
+					. $stage->get_location()
+					. "' entity=`"
+					. $stage->get_entity()
+					. (defined ($stage->get_executions()) ? 
+					   "' executions=`"
+					   . $stage->get_executions()
+					   : '')
+					. "' exclude-entities=`"
+					. (join (',', @{$stage->get_exclude_entities()}))
+					. "'"
+				       );
+
+      my $description_file = $stage->get_description_file();
+      if (defined($description_file)) {
+	my $description_file_path = $morpheus->find_file_using_module_search_path($description_file);
+	if (defined($description_file_path)) {
+	  open(DESCRIPTION, $description_file_path) || Logger::fatal("couldn't open `$description_file_path' : $!\n");
+	  Logger::informational("description:");
+	  Logger::informational("\n");	  
+	  my $line;
+	  while ($line = <DESCRIPTION>) {
+	    Logger::informational($line);
+	  }
+	  Logger::informational("\n");	  
+	}
+      }
+    }
+
+    if ($prompt_before_each_stage) {
+
+      if (skip_prompt() eq 'skip') {
+	next STAGE;
+      }
+    }
+
+
+    # get the entity for this stage
+	    
+    my $stage_entity = $stage->get_entity();
+	    
+    # run through the hosts on the network
+
+  HOST:
+    foreach my $host (@{$hosts}) {
+
+      my $stage_execution = new Morpheus::Stage_Execution(Stage => $stage,
+							  Host => $host,
+							 );
+
+      # does this host have the stage's entity?
+
+      #      use Data::Dumper;
+      #      print Dumper($host);
+
+      next HOST unless $host->has_entity($stage_entity);
+
+      # yes; do we need to execute it?
+      # Various reasons to skip a host
+
+      # have we exceeded this stage's execution count?
+
+      if (!defined($execution_counts->{$stage})) {
+	$execution_counts->{$stage} = 0;
+      }
+
+      if (defined($stage->executions()) 
+	  && ($execution_counts->{$stage} >= $stage->executions())) {
+
+	# yes; skip it
+
+	Logger::informational_to_log_file(" SKIP "
+					  . $host->get_hostname_string()
+					  . " execution count = "
+					  . $execution_counts->{$stage}
+					 );
+	next HOST;
+      }
+		
+      foreach my $exclude_entity (@{$stage->get_exclude_entities()}) {
+	if ($host->has_entity($exclude_entity)) {
+	  Logger::informational_to_log_file(" SKIP "
+					    . $host->get_hostname_string()
+					    . " has exclude-entity `$exclude_entity'");
+	  next HOST;
+	}
+      }
+
+      if (!$master) {
+		    
+		    
+	#  Logger::informational("executing on `" . $this_host->get_hostname_string() . "' on network `" . $this_host->get_network()->get_name() . "' as slave");
+		    
+	# This host is on the network. Does it have this stage's entity?
+	if ($stage_entity eq $slave_entity) {
+	  # yes; execute it
+	  # we are running locally. Check the slave_entity.
+			
+	  Logger::informational_to_log_file(" on " . $host->get_annotated_entity_list($stage->get_entity));
+
+	  Logger::informational(' ');
+	  Logger::informational("stage " 
+				. $stage->get_stage_number()->print()
+				. " `"
+				. (defined($stage->get_description()) ? $stage->get_description() : '')
+				. "'\n module=`"
+				. $stage->get_module()
+			       );
+	  Logger::informational_to_log_file("stage " 
+					    . $stage->get_stage_number()->print()
+					    . " `"
+					    . (defined($stage->get_description()) ? $stage->get_description() : '')
+					    . "'\n module=`"
+					    . $stage->get_module()
+					    . "' location=`"
+					    . $stage->get_location()
+					    . "' entity=`"
+					    . $stage->get_entity()
+					    . (defined ($stage->get_executions()) ? 
+					       "' executions=`"
+					       . $stage->get_executions()
+					       : '')
+					    . "' exclude-entities=`"
+					    . (join (',', @{$stage->get_exclude_entities()}))
+					    . "'"
+					   );
+
+	  if ($prompt_before_each_host) {
+	    
+	    if (skip_prompt() eq 'skip') {
+	      next HOST;
+	    }
+	  }
+
+	  $stage_exit_code = $morpheus->execute_migration_stage($stage, $genesis, $network, $stage_entity, $host);
+	  
+	}
+      } else {
+	
+              
+	# no; invoke morpheus on the remote machine, or for a master
+
+	#	Logger::informational(" " . $host->get_annotated_entity_list($stage_entity));
+	#	Logger::informational("    has `$stage_entity="
+	#			      . $host->get_parameters()->{$stage_entity}
+	#			      . "', invoking remotely"
+	# 			     );
+
+	if ($prompt_before_each_host) {
+
+	  if (skip_prompt() eq 'skip') {
+	    next HOST;
+	  }
+	}
+
+	# sync up our sources
+	if ($no_remote_execute) {
+	  if (!$stage->validate($morpheus)) {
+	    Logger::fatal("invalid stage "
+			  . $stage->get_stage_number()->print());
+	  }
+	  #         use Data::Dumper;
+	  #         print Dumper($stage);
+
+	  #                   Logger::informational("option `--no-remote-execute' set, skipping");
+	} else {
+	  if ($stage->get_location() =~ /master/) {
+	    # run on this machine
+	    #         Logger::informational(" running on master ");
+
+	    $stage_exit_code = $morpheus->execute_migration_stage($stage, $genesis, $network, $stage_entity, $host);
+
+	  } else {
+
+	  REMOTE_EXECUTE:
+
+	    my $data_ok;
+	    my $tries = 0;
+
+	    do {
+	      ++$tries;
+	      $data_ok = 1;
+
+	      my $exit_status = $morpheus->push_sync_host(
+							  Host => $host, 
+							  Clean_Shadow => $clean_shadow,
+							 );
+                  
+	      if ($exit_status == 5120) {
+		Logger::warning("rsync returned exit status `$exit_status'");    
+		if ($tries < 2) {
+		  Logger::warning("trying again");
+		  $data_ok = 0;
+		} else {
+		  Logger::warning("ignoring");		    
+		  $data_ok = 1;
+		}
+	      } elsif ($exit_status) {
+		Logger::warning("rsync capriciously returned nonzero exit status `$exit_status'");    
+		if ($tries < 2) {
+		  Logger::warning("trying again");
+		  $data_ok = 0;
+		} else {
+		  Logger::fatal("rsync returned nonzero exit status `$exit_status', giving up");
+		}
+	      }
+	    } while (!$data_ok);
+
+	    # execute
+                
+	    $stage_exit_code = $morpheus->remote_execute(
+							 Host => $host, 
+							 Stage => $stage,
+							);
+
+	    my $fatal_code = $Error_Code::FATAL; # shut perl up
+	    if ($stage_exit_code == $Error_Code::FATAL) {
+	      Logger::fatal("slave terminated with fatal error");
+	    }
+
+	    $tries = 0;
+	    do {
+	      ++$tries;
+	      $data_ok = 1;
+
+	      my $exit_status = $morpheus->pull_crypt(
+						      Host => $host,
+						     );
+
+	      if ($exit_status == 5120) {
+		Logger::warning("rsync returned exit status `$exit_status'");    
+		if ($tries < 2) {
+		  Logger::warning("trying again");
+		  $data_ok = 0;
+		} else {
+		  Logger::warning("ignoring");		    
+		  $data_ok = 1;
+		}
+	      } elsif ($exit_status) {
+		Logger::warning("rsync capriciously returned nonzero exit status `$exit_status'");    
+		if ($tries < 2) {
+		  Logger::warning("trying again");
+		  $data_ok = 0;
+		} else {
+		  Logger::fatal("rsync returned nonzero exit status `$exit_status', giving up");
+		}
+	      } 
+	    } while (!$data_ok);
+	  }
+	}
+
+	$stage_execution->set_exit_code($stage_exit_code);
+	$morpheus->add_stage_execution($stage_execution);
+
+	++$execution_counts->{$stage};
+	#          print "\n";
+      }
+    }
+  }
+}
+
+# prompt after the stage if necessary.
+if ($prompt_after_each_stage) {
+  Morpheus::prompt_user();
+}
+
+sub repeat_prompt {
+  Logger::informational(" (r)epeat, (c)ontinue, (q)uit) (repeat)?");
+  $| = 1;
+  my $choice = lc(<STDIN>);
+  if ($choice =~ /^\s*q/) {
+    Logger::informational("goodbye.");
+    exit(0);
+  } elsif ($choice =~ /^\s*c/) {
+    Logger::informational("continuing.");                 
+    return 'continue';
+  } else {
+    Logger::informational("repeat");              
+    return 'repeat';
+  }
+}
+  
+sub skip_prompt {
+  Logger::informational(" (e)xecute, (s)kip, (q)uit) (execute)?");
+  $| = 1;
+  my $choice = lc(<STDIN>);
+  if ($choice =~ /^\s*q/) {
+    Logger::informational("goodbye.");
+    exit(0);
+  } elsif ($choice =~ /^\s*s/) {
+    Logger::informational("skipping.");           
+    return 'skip';
+  } else {
+    Logger::informational("executing");           
+    return 'execute';
+  }
+}
+
+# clean up
+
+$morpheus->clean_shadow_dirs();
+
+# return the last stage exit code
+exit($stage_exit_code);
+  
+#Logger::informational("Morpheus done on host " . Misc::hostname());
+

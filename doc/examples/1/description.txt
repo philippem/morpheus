@@ -1,0 +1,6 @@
+$Id: description.txt,v 1.1.1.1 2004/03/03 17:12:46 pmclean Exp $
+
+This file
+is an example of a stage description.
+
+Put whatever you want in here.

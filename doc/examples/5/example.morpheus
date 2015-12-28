@@ -1,0 +1,17 @@
+# $Id: example.morpheus,v 1.1.1.1 2004/03/03 17:12:46 pmclean Exp $
+
+# A minimal morpheus configuration script
+
+# comments begin with # or ;
+
+# Optional info section. Morpheus will emit the description field, if
+# it exists.
+
+[info]
+description = Emit warnings and errors.
+
+[niqs stage0.0]
+description = Example of emitting warnings and errors.
+module = trivial.pm
+
+
