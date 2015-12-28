@@ -50,36 +50,39 @@ execution, to avoid the requirement of any additional dependencies.
 
 For example, given the network definition
 
-- [network alpha]
-- domain = alpha.something.net
--
-- [alpha web]
-- hostname = host0.something.net
-- www = nginx
--
-- [alpha database]
-- hostname = host1.something.net
-- db = PostgreSQL
--
+
+    [network alpha]
+    domain = alpha.something.net
+
+    [alpha web]
+    hostname = host0.something.net
+    www = nginx
+
+    [alpha database]
+    hostname = host1.something.net
+    db = PostgreSQL
+
 
 and the morpheus definition
 
-- [hostname stage0.0]
-- module = print_hostname.pm
--
-- [www stage1.0]
-- module = print_http_stats.pm
--
-- [db stage2.0]
-- module = print_db_stats.pm
--
+
+    [hostname stage0.0]
+    module = print_hostname.pm
+
+    [www stage1.0]
+    module = print_http_stats.pm
+
+    [db stage2.0]
+    module = print_db_stats.pm
+
 
 Morpheus will run the following scripts:
 
-- print_hostname.pm on host0.something.net
-- print_hostname.pm on host1.something.net
-- print_http_stats.pm on host0.something.net
-- print_db_stats.pm on host1.something.net
+
+    print_hostname.pm on host0.something.net
+    print_hostname.pm on host1.something.net
+    print_http_stats.pm on host0.something.net
+    print_db_stats.pm on host1.something.net
 
 
 
